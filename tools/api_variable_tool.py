@@ -1,7 +1,6 @@
 import json
 import re
 from typing import Dict, Any
-from models import ApiDataset, ApiCollection, ApiCapture
 from tools.api_discovery_tool import ApiDiscoveryTool
 
 
@@ -17,24 +16,33 @@ class ApiVariableService:
         self,
         project_name: str,
         collection_id: str,
-        original_dataset: ApiDataset
-    ) -> ApiDataset:
+        original_dataset
+    ):
 
-        collection: ApiCollection = self.api_discovery_service.get_collection(
+        collection = self.api_discovery_service.get_collection(
             project_name, collection_id
         )
 
         if not collection:
             return original_dataset
 
-        variables: Dict[str, Any] = collection.variables or {}
+        # ✅ HANDLE BOTH dict + object
+        if isinstance(collection, dict):
+            variables: Dict[str, Any] = collection.get("variables", {})
+        else:
+            variables: Dict[str, Any] = getattr(collection, "variables", {}) or {}
+
         if not variables:
             return original_dataset
 
-        # Convert dataset → JSON string
-        dataset_json = json.dumps(original_dataset.to_dict())
+        # ✅ HANDLE BOTH dict + object dataset
+        if hasattr(original_dataset, "to_dict"):
+            dataset_dict = original_dataset.to_dict()
+        else:
+            dataset_dict = original_dataset
 
-        # Replace {{variable}}
+        dataset_json = json.dumps(dataset_dict)
+
         pattern = re.compile(r"\{\{([^}]+)}}")
 
         def replace(match):
@@ -43,8 +51,7 @@ class ApiVariableService:
 
         updated_json = pattern.sub(replace, dataset_json)
 
-        # Convert back → ApiDataset
-        return ApiDataset.from_dict(json.loads(updated_json))
+        return json.loads(updated_json)
 
     # =========================================================
     # EXTRACT VARIABLES FROM RESPONSE
@@ -54,10 +61,13 @@ class ApiVariableService:
         project_name: str,
         collection_id: str,
         response_body: str,
-        dataset: ApiDataset
+        dataset
     ):
 
-        if not dataset.captures:
+        # ✅ HANDLE BOTH dict + object dataset
+        captures = dataset.get("captures") if isinstance(dataset, dict) else getattr(dataset, "captures", [])
+
+        if not captures:
             return
 
         try:
@@ -66,21 +76,32 @@ class ApiVariableService:
             print("Cannot extract variables: Response is not valid JSON.")
             return
 
-        collection: ApiCollection = self.api_discovery_service.get_collection(
+        collection = self.api_discovery_service.get_collection(
             project_name, collection_id
         )
 
         if not collection:
             return
 
-        if collection.variables is None:
-            collection.variables = {}
+        # ✅ HANDLE dict vs object
+        if isinstance(collection, dict):
+            variables = collection.setdefault("variables", {})
+        else:
+            if getattr(collection, "variables", None) is None:
+                collection.variables = {}
+            variables = collection.variables
 
         updated = False
 
-        for capture in dataset.captures:
-            json_path = capture.jsonPath
-            var_name = capture.variableName
+        for capture in captures:
+
+            # ✅ handle dict vs object
+            if isinstance(capture, dict):
+                json_path = capture.get("jsonPath")
+                var_name = capture.get("variableName")
+            else:
+                json_path = capture.jsonPath
+                var_name = capture.variableName
 
             if not json_path or not var_name:
                 continue
@@ -88,7 +109,7 @@ class ApiVariableService:
             value = self._extract_value_by_path(root_node, json_path)
 
             if value is not None:
-                collection.variables[var_name] = value
+                variables[var_name] = value
                 updated = True
                 print(f"Captured variable: {var_name} = {value}")
 
@@ -100,7 +121,6 @@ class ApiVariableService:
     # =========================================================
     def _extract_value_by_path(self, data: Dict, path: str):
 
-        # Remove "$."
         if path.startswith("$."):
             path = path[2:]
 

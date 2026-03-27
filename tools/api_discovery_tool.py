@@ -198,8 +198,28 @@ class ApiDiscoveryTool:
         col_dir = base / collection_id
         col_dir.mkdir(exist_ok=True)
 
+        # Save collection
         with open(col_dir / "collection.json", "w") as f:
             json.dump(collection, f, indent=2)
+
+        # ✅ CREATE DEFAULT DATASETS (THIS WAS MISSING)
+        datasets_dir = col_dir / "datasets"
+        datasets_dir.mkdir(exist_ok=True)
+
+        for ep in endpoints:
+            dataset = {
+                "id": "default",
+                "baseUrl": "",
+                "headers": {},
+                "queryParams": {},
+                "pathParams": {},
+                "body": {},
+                "formParams": {},
+                "captures": []
+            }
+
+            with open(datasets_dir / f"{ep['id']}.json", "w") as f:
+                json.dump([dataset], f, indent=2)
 
         if source_file.exists():
             shutil.copy(source_file, col_dir / source_name)
@@ -238,6 +258,71 @@ class ApiDiscoveryTool:
         start = text.find("{")
         end = text.rfind("}")
         return text[start:end + 1] if start != -1 else "{}"
+
+    # =========================================================
+    # LOAD COLLECTION
+    # =========================================================
+    def get_collection(self, project_name: str, collection_id: str):
+
+        path = (
+            Path(self.artefacts_base_path)
+            / "Main"
+            / project_name
+            / "api_discovery"
+            / "collections"
+            / collection_id
+            / "collection.json"
+        )
+
+        if not path.exists():
+            raise Exception(f"Collection not found: {path}")
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
+    # =========================================================
+    # LOAD DATASETS
+    # =========================================================
+    def get_datasets(self, project_name: str, collection_id: str, endpoint_id: str):
+
+        path = (
+            Path(self.artefacts_base_path)
+            / "Main"
+            / project_name
+            / "api_discovery"
+            / "collections"
+            / collection_id
+            / "datasets"
+            / f"{endpoint_id}.json"
+        )
+
+        if not path.exists():
+            return []
+
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+
+
+    # =========================================================
+    # SAVE COLLECTION
+    # =========================================================
+    def save_collection(self, project_name: str, collection: dict):
+
+        collection_id = collection.get("id")
+
+        path = (
+            Path(self.artefacts_base_path)
+            / "Main"
+            / project_name
+            / "api_discovery"
+            / "collections"
+            / collection_id
+            / "collection.json"
+        )
+
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(collection, f, indent=2)
 
 
 # =========================================================
